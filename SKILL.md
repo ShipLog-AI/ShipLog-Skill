@@ -1,123 +1,87 @@
 ---
 name: ShipLog
-description: Manage ShipLog changelogs — list repos, generate changelogs, publish entries, and manage subscriptions via the ShipLog REST API.
+description: Manage ShipLog changelogs — list repos, generate changelogs, publish entries via the ShipLog CLI.
 ---
 
 # ShipLog Agent Skill
 
 This skill lets you interact with the ShipLog platform to manage auto-generated changelogs for GitHub repositories.
 
-## Prerequisites
+## Setup
 
-- A ShipLog API key (create one at **Settings → API Keys** in the dashboard)
-- The API key must be set as an environment variable or passed directly
+### 1. Install the CLI
 
-## Authentication
+```bash
+curl -fsSL https://shiplogs.ai/api/install/cli | bash
+```
 
-Set the API key as an environment variable:
+Or install directly via npm:
+
+```bash
+npm install -g ShipLog-AI/ShipLog-CLI
+```
+
+### 2. Authenticate
+
+```bash
+shiplog auth login --key "$SHIPLOG_API_KEY"
+```
+
+Or set the API key in the environment:
 
 ```bash
 export SHIPLOG_API_KEY="sl_your_api_key_here"
+shiplog auth login --key "$SHIPLOG_API_KEY"
 ```
 
-Or use it directly in requests via the `Authorization: Bearer` header.
+## Available Commands
 
-## API Base URL
-
-```
-https://shiplogs.ai/api
-```
-
-## Available Operations
-
-### 1. List Connected Repositories
+### Repositories
 
 ```bash
-curl -s -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  https://shiplogs.ai/api/v1/repos | jq
+# List connected repos
+shiplog repos list
+
+# Add a new repo
+shiplog repos add owner/repo
+
+# Remove a repo
+shiplog repos remove <repo_id>
 ```
 
-Returns: `{ "ok": true, "repos": [...] }`
-
-Each repo has `id`, `full_name`, `schedule_frequency`, and `schedule_auto_publish`.
-
-### 2. Add a Repository
+### Changelogs
 
 ```bash
-curl -s -X POST \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"repo": "owner/repo-name"}' \
-  https://shiplogs.ai/api/v1/repos | jq
-```
+# List changelog entries for a repo
+shiplog changelog list owner/repo
 
-The repo must be accessible by the ShipLog GitHub App installed on the account.
+# Generate a changelog (creates a draft)
+shiplog changelog generate owner/repo
 
-### 3. Remove a Repository
+# Generate and auto-publish
+shiplog changelog generate owner/repo --publish
 
-```bash
-curl -s -X DELETE \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  "https://shiplogs.ai/api/v1/repos?id=REPO_UUID" | jq
-```
+# View a specific entry
+shiplog changelog view <entry_id>
 
-### 4. List Changelogs
-
-```bash
-# Public: published entries only
-curl -s "https://shiplogs.ai/api/v1/changelog?repo=owner/repo&limit=10" | jq
-
-# Authenticated: include drafts
-curl -s -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  "https://shiplogs.ai/api/v1/changelog?repo=owner/repo&published=false" | jq
-```
-
-Parameters: `repo` (required), `limit` (default 20), `offset`, `published` (default true).
-
-### 5. Generate a Changelog
-
-```bash
-curl -s -X POST \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"repo": "owner/repo", "auto_publish": false}' \
-  https://shiplogs.ai/api/v1/changelog | jq
-```
-
-This triggers AI-based changelog generation from recent commits, PRs, and releases. Set `auto_publish: true` to publish immediately.
-
-### 6. View a Single Changelog Entry
-
-```bash
-curl -s -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  https://shiplogs.ai/api/v1/changelog/ENTRY_ID | jq
-```
-
-### 7. Publish a Changelog Entry
-
-```bash
-# Publish
-curl -s -X POST \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"action": "publish"}' \
-  https://shiplogs.ai/api/v1/changelog/ENTRY_ID/publish | jq
+# Publish a draft
+shiplog changelog publish <entry_id>
 
 # Unpublish
-curl -s -X POST \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"action": "unpublish"}' \
-  https://shiplogs.ai/api/v1/changelog/ENTRY_ID/publish | jq
+shiplog changelog publish <entry_id> --unpublish
 ```
 
-### 8. Subscribe to Notifications (Public)
+### Authentication & Config
 
 ```bash
-curl -s -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "repo": "owner/repo"}' \
-  https://shiplogs.ai/api/subscribe | jq
+# Check auth status
+shiplog auth whoami
+
+# Change base URL (for self-hosted instances)
+shiplog config set api_url https://your-instance.com
+
+# View config file location
+shiplog config path
 ```
 
 ## Common Workflows
@@ -126,76 +90,81 @@ curl -s -X POST \
 
 ```bash
 # 1. List repos to find the target
-REPOS=$(curl -s -H "Authorization: Bearer $SHIPLOG_API_KEY" https://shiplogs.ai/api/v1/repos)
-echo "$REPOS" | jq '.repos[] | {id, full_name, schedule_frequency}'
+shiplog repos list
 
-# 2. Generate a changelog for a repo
-RESULT=$(curl -s -X POST \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"repo": "owner/repo", "auto_publish": false}' \
-  https://shiplogs.ai/api/v1/changelog)
+# 2. Generate a changelog
+shiplog changelog generate owner/repo
 
-ENTRY_ID=$(echo "$RESULT" | jq -r '.result.entry_id')
-echo "Generated entry: $ENTRY_ID"
+# 3. List entries to find the new draft
+shiplog changelog list owner/repo
 
-# 3. View the draft
-curl -s -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  https://shiplogs.ai/api/v1/changelog/$ENTRY_ID | jq '.entry.content'
+# 4. Review the content
+shiplog changelog view <entry_id>
 
-# 4. Publish it
-curl -s -X POST \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"action": "publish"}' \
-  https://shiplogs.ai/api/v1/changelog/$ENTRY_ID/publish | jq
+# 5. Publish
+shiplog changelog publish <entry_id>
 ```
 
 ### Add a New Repo and Generate First Changelog
 
 ```bash
 # 1. Add the repo
-curl -s -X POST \
-  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"repo": "owner/new-repo"}' \
-  https://shiplogs.ai/api/v1/repos | jq
+shiplog repos add owner/new-repo
 
 # 2. Generate and auto-publish
+shiplog changelog generate owner/new-repo --publish
+```
+
+### CI/CD: Auto-Generate on Release
+
+```bash
+shiplog auth login --key "$SHIPLOG_API_KEY"
+shiplog changelog generate owner/repo --publish
+```
+
+## API Fallback
+
+If the CLI is not available, you can use curl directly:
+
+```bash
+# List repos
+curl -s -H "Authorization: Bearer $SHIPLOG_API_KEY" \
+  https://shiplogs.ai/api/v1/repos | jq
+
+# Add a repo
 curl -s -X POST \
   -H "Authorization: Bearer $SHIPLOG_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"repo": "owner/new-repo", "auto_publish": true}' \
+  -d '{"repo": "owner/repo"}' \
+  https://shiplogs.ai/api/v1/repos | jq
+
+# Generate a changelog
+curl -s -X POST \
+  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"repo": "owner/repo", "auto_publish": false}' \
   https://shiplogs.ai/api/v1/changelog | jq
+
+# Publish
+curl -s -X POST \
+  -H "Authorization: Bearer $SHIPLOG_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "publish"}' \
+  https://shiplogs.ai/api/v1/changelog/ENTRY_ID/publish | jq
 ```
-
-## CLI Alternative
-
-If the ShipLog CLI is installed, you can use it instead of curl:
-
-```bash
-shiplog auth login --key $SHIPLOG_API_KEY
-shiplog repos list
-shiplog repos add owner/repo
-shiplog changelog generate owner/repo
-shiplog changelog publish ENTRY_ID
-shiplog changelog view ENTRY_ID
-```
-
-Install: `npm install -g @shiplog/cli`
 
 ## Error Handling
 
-All errors return JSON: `{ "error": "message" }`
+All CLI commands exit with code 1 on error and print a message prefixed with `✗`. Common errors:
 
-| Code | Meaning |
-|------|---------|
-| 400 | Bad request (missing params) |
-| 401 | Invalid or missing API key |
-| 403 | Plan limit reached |
-| 404 | Resource not found |
-| 502 | GitHub API error |
+| Error | Cause |
+| ----- | ----- |
+| `Not authenticated` | Run `shiplog auth login` first |
+| `Plan limit reached` | Upgrade plan or remove unused repos |
+| `Repository not found` | Repo not accessible by ShipLog GitHub App |
 
-## Documentation
+## Links
 
-Full API reference: https://docs-frontend-production.up.railway.app/reference/api
+- [CLI Repository](https://github.com/ShipLog-AI/ShipLog-CLI)
+- [Full API Reference](https://docs-frontend-production.up.railway.app/reference/api)
+- [CLI Reference](https://docs-frontend-production.up.railway.app/reference/cli)
